@@ -14,4 +14,6 @@ config/
 .DS_Store
 .idea/
 
+realestatesec.tar.gz
+
 rook
