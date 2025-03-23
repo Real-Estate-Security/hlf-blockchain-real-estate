@@ -2,6 +2,8 @@
 
 # Fabric Full Stack Development Workshop
 
+Visit [DEV.md](./DEV.md) for a comprehensive setup guide.
+
 ![Hyperledger](https://img.shields.io/badge/hyperledger-2F3134?style=for-the-badge&logo=hyperledger&logoColor=white)
 
 Hyperledger Fabric can be used to represent assets of any kind on a permissioned decentralized ledger, from fungible tokens to non-fungible tokens, including monetary products, marbles, pineapples, classic cars, fine art, and anything else you can imagine.
