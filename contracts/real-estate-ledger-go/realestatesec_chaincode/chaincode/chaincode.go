@@ -11,6 +11,15 @@ type SmartContract struct {
 	contractapi.Contract
 }
 
+type Representation struct {
+	ID        string `json:"ID"`
+	User      string `json:"user"`
+	Agent     string `json:"Agent"`
+	StartDate string `json:"start_date"`
+	EndDate   string `json:"end_date"`
+	Status    string `json:"status"` // New field to track status
+}
+
 type Property struct {
 	ID      string         `json:"ID"`
 	Address string         `json:"Address"`
@@ -27,6 +36,96 @@ type Bid struct {
 	Agent           string `json:"Agent"`
 	BuyerCountered  bool   `json:"BuyerCountered"`
 	SellerCountered bool   `json:"SellerCountered"`
+}
+
+func (s *SmartContract) RepresentationExists(ctx contractapi.TransactionContextInterface, id string) (bool, error) {
+	representationJSON, err := ctx.GetStub().GetState(id)
+	if err != nil {
+		return false, fmt.Errorf("failed to read from world state: %v", id)
+	}
+
+	return representationJSON != nil, nil
+}
+
+// create a new representation
+func (s *SmartContract) CreateRepresentation(ctx contractapi.TransactionContextInterface, id string, user string, agent string, start_date string, end_date string) error {
+	exists, err := s.RepresentationExists(ctx, id)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("the representation %s already exists", id)
+	}
+
+	representation := Representation{
+		ID:        id,
+		User:      user,
+		Agent:     agent,
+		StartDate: start_date,
+		EndDate:   end_date,
+		Status:    "Pending", // Initial status
+	}
+	representationJSON, err := json.Marshal(representation)
+	if err != nil {
+		return err
+	}
+
+	return ctx.GetStub().PutState(id, representationJSON)
+}
+
+// initiate an invite to represent a client
+func (s *SmartContract) RequestRepresentation(ctx contractapi.TransactionContextInterface, id string, agent_username string, client_username string, start_date string, end_date string) error {
+	exists, err := s.RepresentationExists(ctx, id)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("the representation %s already exists", id)
+	}
+
+	representation := Representation{
+		ID:        id,
+		Agent:     agent,
+		StartDate: start_date,
+		EndDate:   end_date,
+		Status:    "Invited", // Status for invite
+	}
+	representationJSON, err := json.Marshal(representation)
+	if err != nil {
+		return err
+	}
+
+	return ctx.GetStub().PutState(id, representationJSON)
+}
+
+// accept and sign to be represented by the real estate agent
+func (s *SmartContract) AcceptRepresentation(ctx contractapi.TransactionContextInterface, id string, user string) error {
+	representationJSON, err := ctx.GetStub().GetState(id)
+	if err != nil {
+		return fmt.Errorf("failed to read from world state: %v", id)
+	}
+	if representationJSON == nil {
+		return fmt.Errorf("the representation %s does not exist", id)
+	}
+
+	var representation Representation
+	err = json.Unmarshal(representationJSON, &representation)
+	if err != nil {
+		return err
+	}
+
+	if representation.Status != "Invited" {
+		return fmt.Errorf("the representation %s is not in an invited state", id)
+	}
+
+	representation.User = user
+	representation.Status = "Accepted" // Status for accepted representation
+	representationJSON, err = json.Marshal(representation)
+	if err != nil {
+		return err
+	}
+
+	return ctx.GetStub().PutState(id, representationJSON)
 }
 
 func (s *SmartContract) PropertyExists(ctx contractapi.TransactionContextInterface, id string) (bool, error) {
