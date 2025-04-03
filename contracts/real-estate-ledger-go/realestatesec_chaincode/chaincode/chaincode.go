@@ -85,7 +85,7 @@ func (s *SmartContract) RequestRepresentation(ctx contractapi.TransactionContext
 
 	representation := Representation{
 		ID:        id,
-		Agent:     agent,
+		Agent:     agent_username,
 		StartDate: start_date,
 		EndDate:   end_date,
 		Status:    "Invited", // Status for invite
