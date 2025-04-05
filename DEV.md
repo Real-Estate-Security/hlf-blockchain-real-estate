@@ -2,59 +2,67 @@
 
 Here's a walkthrough on how to setup the Hyperledger Fabric network locally.
 
-
 # Required Tools
 
 **Windows:** You'll need to perform all steps within your Linux subsystem (WSL)
 
 [Docker Desktop](https://www.docker.com/products/docker-desktop/) to run the network locally in a container
 
-***NOTE:** If you're using Windows, make sure to enable WSL integration in Docker Desktop*
+**\*NOTE:** If you're using Windows, make sure to enable WSL integration in Docker Desktop\*
 
 [just](https://github.com/casey/just#installation) to run all the commands here directly
 
 [nvm](https://github.com/nvm-sh/nvm#installing-and-updating) to install node and npm
+
 ```shell
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.1/install.sh | bash
 ```
+
 [node LTS and npm](https://github.com/nvm-sh/nvm#usage) to run node chaincode and applications
+
 ```shell
 nvm install --lts
 nvm use --lts
 ```
+
 [Golang](https://go.dev/doc/install) to compile chaincode and run backend
 
 [weft ](https://www.npmjs.com/package/@hyperledger-labs/weft) Hyperledger-Labs cli to work with identities and chaincode packages
+
 ```shell
 npm install -g @hyperledger-labs/weft
 ```
 
 [jq](https://stedolan.github.io/jq/) JSON command-line processor
+
 ```shell
 sudo apt-get update && sudo apt-get install -y jq
 ```
 
 Fabric peer CLI
+
 ```shell
 curl -sSL https://raw.githubusercontent.com/hyperledger/fabric/main/scripts/install-fabric.sh | bash -s -- binary
 export WORKSHOP_PATH=$(pwd)
 export PATH=${WORKSHOP_PATH}/bin:$PATH
 export FABRIC_CFG_PATH=${WORKSHOP_PATH}/config
 ```
-***NOTE:*** 
-- *Sometimes you'll get an error saying that the environment variable FABRIC_CFG_PATH is not set or set to a non-existent file path*
-- *To fix this, just reset the environment variable to where your "config" directory lies at.*
 
-***Example:***
- ```shell 
- export FABRIC_CFG_PATH=/home/brian_nguyen/config
+**_NOTE:_**
+
+- _Sometimes you'll get an error saying that the environment variable FABRIC_CFG_PATH is not set or set to a non-existent file path_
+- _To fix this, just reset the environment variable to where your "config" directory lies at._
+
+**_Example:_**
+
+```shell
+export FABRIC_CFG_PATH=/home/brian_nguyen/config
 ```
 
 > to check if you have all the necessary tools and configurations, run `./check.sh` from the repo
 
-
-
 # Start the Fabric Infrastructure
+
 We're using MicroFab for the Fabric infrastructure as it's a single container that is fast to start.
 The MicroFab container includes an ordering service node and a peer process that is pre-configured to create a channel and call external chaincodes.
 It also includes credentials for an `org1` organization, which will be used to run the peer. We'll use an `org1` admin user when interacting with the environment.
@@ -85,16 +93,19 @@ A file `org1admin.env` is written out that contains the environment variables ne
 
 After having the microfab container running locally, we can begin installing the chaincode for onto the network.
 
-Start  by navigating to the chaincode
+Start by navigating to the chaincode
+
 ```bash
 cd ./contracts/real-estate-ledger-go/realestatesec_chaincode
 ```
 
 Then we'll need to install the smart contract dependencies
+
 ```shell
 GO111MODULE=on go mod vendor
 ```
-*If the command is successful, the go packages will be installed inside a `vendor` folder.*
+
+_If the command is successful, the go packages will be installed inside a `vendor` folder._
 
 Now navigate back to the project's root directory and create the chaincode package
 
@@ -123,13 +134,15 @@ Save chaincode package ID as environment variable, this is used to approve the c
 ```shell
 export CC_PACKAGE_ID=basic_1.0:69de748301770f6ef64b42aa6bb6cb291df20aa39542c3ef94008615704007f3
 ```
-***NOTE:** Replace example with your package's ID*
 
-***Repeat for a peer for each org within the channel (on microfab there is only one org and one peer, so just do it once)***
+**\*NOTE:** Replace example with your package's ID\*
+
+**_Repeat for a peer for each org within the channel (on microfab there is only one org and one peer, so just do it once)_**
 
 Next let's approve the chaincode definition at the org level
 
 Make sure that the chaincode is install on the peer
+
 ```shell
 peer lifecycle chaincode queryinstalled
 ```
@@ -139,7 +152,8 @@ Approve the chaincode
 ```shell
 peer lifecycle chaincode approveformyorg -o $ORDERER_ENDPOINT --channelID mychannel --name realestatesec --version 1.0 --package-id $CC_PACKAGE_ID --sequence 1
 ```
-***Repeat for each org within the channel (on microfab there is only one org and one peer, so just do it once)***
+
+**_Repeat for each org within the channel (on microfab there is only one org and one peer, so just do it once)_**
 
 Next, commit the chaincode to the channel
 
@@ -148,21 +162,24 @@ First check the commit readiness of the chaincode
 ```shell
 peer lifecycle chaincode checkcommitreadiness --channelID mychannel --name realestatesec --version 1.0  --sequence 1 –output json
 ```
-***Needs to be approved by all orgs in the channel***
+
+**_Needs to be approved by all orgs in the channel_**
 
 Then commit to the channel
+
 ```shell
 peer lifecycle chaincode commit -o $ORDERER_ENDPOINT --channelID mychannel --name realestatesec --version 1.0  --sequence 1
 ```
 
 Finally, check if the chaincode is committed successfully
+
 ```shell
 peer lifecycle chaincode querycommitted --channelID mychannel --name realestatesec
 ```
 
 # Test Chaincode
 
-We can test the chaincode by running queries using the peer CLI tool. 
+We can test the chaincode by running queries using the peer CLI tool.
 
 Here are some examples for the current version of the chaincode
 
@@ -170,13 +187,9 @@ Check if property exists
 
     peer chaincode query -C mychannel -o $ORDERER_ENDPOINT -n realestatesec -c '{"Args":["PropertyExists", "1"]}' --connTimeout 15s
 
-  
-
 Register Property
 
     peer chaincode invoke -C mychannel -o $ORDERER_ENDPOINT -n realestatesec -c '{"Args":["RegisterProperty", "1", "123 Jane Street", "Brian Nguyen", "Malik"]}' --connTimeout 15s
-
-  
 
 View All Properties
 
@@ -189,3 +202,10 @@ List Property
 Place Bid
 
     peer chaincode invoke -C mychannel -o $ORDERER_ENDPOINT -n realestatesec -c '{"Args":["PlaceBid", “1”, “1”, 100000, “John Doe”, “Malik”]}' --connTimeout 15s
+
+Request Representation
+
+    peer chaincode query -C mychannel -o $ORDERER_ENDPOINT -n realestatesec -c '{"Args":["RequestRepresentation", "testclient1", "testagent1", "2008-01-02T15:04:05Z", "2010-01-02T15:04:05Z"]}' --connTimeout 15s
+
+List Representations
+peer chaincode query -C mychannel -o $ORDERER_ENDPOINT -n realestatesec -c '{"Args":["ListRepresentations", "testclient1"]}' --connTimeout 15s

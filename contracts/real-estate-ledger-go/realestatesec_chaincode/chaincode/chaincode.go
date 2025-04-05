@@ -12,12 +12,15 @@ type SmartContract struct {
 }
 
 type Representation struct {
-	ID        string `json:"ID"`
-	User      string `json:"user"`
-	Agent     string `json:"Agent"`
-	StartDate string `json:"start_date"`
-	EndDate   string `json:"end_date"`
-	Status    string `json:"status"` // New field to track status
+	ID             string `json:"ID"`
+	ClientUsername string `json:"user_id"`
+	AgentUsername  string `json:"agent_id"`
+	StartDate      string `json:"start_date"`   // ISO 8601 format for timestamps
+	EndDate        string `json:"end_date"`     // ISO 8601 format for timestamps
+	Status         string `json:"status"`       // AgreementStatus enum-like string
+	RequestedAt    string `json:"requested_at"` // ISO 8601 format for timestamps
+	SignedAt       string `json:"signed_at"`    // ISO 8601 format for timestamps
+	IsActive       bool   `json:"is_active"`
 }
 
 type Property struct {
@@ -47,85 +50,142 @@ func (s *SmartContract) RepresentationExists(ctx contractapi.TransactionContextI
 	return representationJSON != nil, nil
 }
 
-// create a new representation
-func (s *SmartContract) CreateRepresentation(ctx contractapi.TransactionContextInterface, id string, user string, agent string, start_date string, end_date string) error {
-	exists, err := s.RepresentationExists(ctx, id)
+func (s *SmartContract) RequestRepresentation(ctx contractapi.TransactionContextInterface, representationID string, clientUsername string, agentUsername string, startDate string, endDate string) error {
+	exists, err := s.RepresentationExists(ctx, representationID)
 	if err != nil {
 		return err
 	}
 	if exists {
-		return fmt.Errorf("the representation %s already exists", id)
+		return fmt.Errorf("a representation request with ID %s already exists", representationID)
+	}
+
+	txTimestamp, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil {
+		return fmt.Errorf("failed to get transaction timestamp: %v", err)
 	}
 
 	representation := Representation{
-		ID:        id,
-		User:      user,
-		Agent:     agent,
-		StartDate: start_date,
-		EndDate:   end_date,
-		Status:    "Pending", // Initial status
+		ID:             representationID,
+		ClientUsername: clientUsername,
+		AgentUsername:  agentUsername,
+		StartDate:      startDate,
+		EndDate:        endDate,
+		Status:         "pending",
+		RequestedAt:    txTimestamp.String(),
+		IsActive:       false,
 	}
+
 	representationJSON, err := json.Marshal(representation)
 	if err != nil {
 		return err
 	}
 
-	return ctx.GetStub().PutState(id, representationJSON)
+	return ctx.GetStub().PutState(representationID, representationJSON)
 }
 
-// initiate an invite to represent a client
-func (s *SmartContract) RequestRepresentation(ctx contractapi.TransactionContextInterface, id string, agent_username string, client_username string, start_date string, end_date string) error {
-	exists, err := s.RepresentationExists(ctx, id)
+func (s *SmartContract) DeclineRepresentation(ctx contractapi.TransactionContextInterface, representationID string) error {
+	representationJSON, err := ctx.GetStub().GetState(representationID)
 	if err != nil {
-		return err
-	}
-	if exists {
-		return fmt.Errorf("the representation %s already exists", id)
-	}
-
-	representation := Representation{
-		ID:        id,
-		Agent:     agent,
-		StartDate: start_date,
-		EndDate:   end_date,
-		Status:    "Invited", // Status for invite
-	}
-	representationJSON, err := json.Marshal(representation)
-	if err != nil {
-		return err
-	}
-
-	return ctx.GetStub().PutState(id, representationJSON)
-}
-
-// accept and sign to be represented by the real estate agent
-func (s *SmartContract) AcceptRepresentation(ctx contractapi.TransactionContextInterface, id string, user string) error {
-	representationJSON, err := ctx.GetStub().GetState(id)
-	if err != nil {
-		return fmt.Errorf("failed to read from world state: %v", id)
+		return fmt.Errorf("failed to read from world state: %v", err)
 	}
 	if representationJSON == nil {
-		return fmt.Errorf("the representation %s does not exist", id)
+		return fmt.Errorf("representation %s does not exist", representationID)
 	}
 
 	var representation Representation
 	err = json.Unmarshal(representationJSON, &representation)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to unmarshal representation: %v", err)
 	}
 
-	if representation.Status != "Invited" {
-		return fmt.Errorf("the representation %s is not in an invited state", id)
-	}
+	representation.Status = "declined"
+	representation.IsActive = false
 
-	representation.User = user
-	representation.Status = "Accepted" // Status for accepted representation
-	representationJSON, err = json.Marshal(representation)
+	updatedRepresentationJSON, err := json.Marshal(representation)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal updated representation: %v", err)
 	}
 
-	return ctx.GetStub().PutState(id, representationJSON)
+	return ctx.GetStub().PutState(representationID, updatedRepresentationJSON)
+}
+
+func (s *SmartContract) AcceptRepresentation(ctx contractapi.TransactionContextInterface, representationID string) error {
+	representationJSON, err := ctx.GetStub().GetState(representationID)
+	if err != nil {
+		return fmt.Errorf("failed to read from world state: %v", err)
+	}
+	if representationJSON == nil {
+		return fmt.Errorf("representation %s does not exist", representationID)
+	}
+
+	var representation Representation
+	err = json.Unmarshal(representationJSON, &representation)
+	if err != nil {
+		return fmt.Errorf("failed to unmarshal representation: %v", err)
+	}
+
+	txTimestamp, err := ctx.GetStub().GetTxTimestamp()
+	if err != nil {
+		return fmt.Errorf("failed to get transaction timestamp: %v", err)
+	}
+
+	representation.Status = "accepted"
+	representation.SignedAt = txTimestamp.String()
+	representation.IsActive = true
+
+	updatedRepresentationJSON, err := json.Marshal(representation)
+	if err != nil {
+		return fmt.Errorf("failed to marshal updated representation: %v", err)
+	}
+
+	return ctx.GetStub().PutState(representationID, updatedRepresentationJSON)
+}
+
+func (s *SmartContract) ListRepresentations(ctx contractapi.TransactionContextInterface, username string) ([]*Representation, error) {
+	resultsIterator, err := ctx.GetStub().GetStateByRange("", "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get state by range: %v", err)
+	}
+	defer resultsIterator.Close()
+
+	var representations []*Representation
+	for resultsIterator.HasNext() {
+		queryResponse, err := resultsIterator.Next()
+		if err != nil {
+			return nil, fmt.Errorf("failed to iterate over results: %v", err)
+		}
+
+		var representation Representation
+		err = json.Unmarshal(queryResponse.Value, &representation)
+		if err != nil {
+			return nil, fmt.Errorf("failed to unmarshal representation: %v", err)
+		}
+
+		// Check if the username matches either ClientUsername or AgentUsername
+		if representation.ClientUsername == username || representation.AgentUsername == username {
+			representations = append(representations, &representation)
+		}
+	}
+
+	return representations, nil
+}
+
+func (s *SmartContract) GetRepresentation(ctx contractapi.TransactionContextInterface, representationID string) (*Representation, error) {
+	representationJSON, err := ctx.GetStub().GetState(representationID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read from world state: %v", err)
+	}
+	if representationJSON == nil {
+		return nil, fmt.Errorf("representation %s does not exist", representationID)
+	}
+
+	var representation Representation
+	err = json.Unmarshal(representationJSON, &representation)
+	if err != nil {
+		return nil, fmt.Errorf("failed to unmarshal representation: %v", err)
+	}
+
+	return &representation, nil
 }
 
 func (s *SmartContract) PropertyExists(ctx contractapi.TransactionContextInterface, id string) (bool, error) {
