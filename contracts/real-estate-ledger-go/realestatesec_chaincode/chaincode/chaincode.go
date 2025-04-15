@@ -33,12 +33,13 @@ type Property struct {
 }
 
 type Bid struct {
-	ID              string `json:"ID"`
-	Amount          int    `json:"Amount"`
-	Bidder          string `json:"Bidder"`
-	Agent           string `json:"Agent"`
-	BuyerCountered  bool   `json:"BuyerCountered"`
-	SellerCountered bool   `json:"SellerCountered"`
+	ID              string  `json:"ID"`
+	Amount          float32 `json:"Amount"`
+	Bidder          string  `json:"Bidder"`
+	Agent           string  `json:"Agent"`
+	BuyerCountered  bool    `json:"BuyerCountered"`
+	SellerCountered bool    `json:"SellerCountered"`
+	Status          string  `json:"Status"`
 }
 
 func (s *SmartContract) RepresentationExists(ctx contractapi.TransactionContextInterface, id string) (bool, error) {
@@ -211,7 +212,7 @@ func (s *SmartContract) RegisterProperty(ctx contractapi.TransactionContextInter
 		Address: address,
 		Owner:   owner,
 		Agent:   agent,
-		State:   "Not for sale",
+		State:   "Active",
 		Bids:    make(map[string]Bid),
 	}
 	propertyJSON, err := json.Marshal(property)
@@ -245,6 +246,8 @@ func (s *SmartContract) ListProperty(ctx contractapi.TransactionContextInterface
 		return err
 	}
 
+	ctx.GetStub().SetEvent("Registered Property", []byte("This is a test event"))
+
 	return ctx.GetStub().PutState(id, propertyJSON)
 
 }
@@ -274,7 +277,7 @@ func (s *SmartContract) ViewProperties(ctx contractapi.TransactionContextInterfa
 	return properties, nil
 }
 
-func (s *SmartContract) PlaceBid(ctx contractapi.TransactionContextInterface, propertyId string, id string, amount int, bidder string, agent string) error {
+func (s *SmartContract) PlaceBid(ctx contractapi.TransactionContextInterface, propertyId string, id string, amount float32, bidder string, agent string) error {
 	propertyJSON, err := ctx.GetStub().GetState(propertyId)
 	if err != nil {
 		return fmt.Errorf("failed read from world state: %v", propertyId)
@@ -300,7 +303,39 @@ func (s *SmartContract) PlaceBid(ctx contractapi.TransactionContextInterface, pr
 		Agent:           agent,
 		BuyerCountered:  false,
 		SellerCountered: false,
+		Status:          "Pending",
 	}
+	property.Bids[id] = bid
+
+	propertyJSON, err = json.Marshal(property)
+	if err != nil {
+		return err
+	}
+
+	return ctx.GetStub().PutState(propertyId, propertyJSON)
+}
+
+func (s *SmartContract) UpdateBid(ctx contractapi.TransactionContextInterface, propertyId string, id string, newStatus string) error {
+	propertyJSON, err := ctx.GetStub().GetState(propertyId)
+	if err != nil {
+		return fmt.Errorf("failed to get world state: %v", propertyId)
+	}
+	if propertyJSON == nil {
+		return fmt.Errorf("property %v does not exist", propertyId)
+	}
+
+	var property Property
+	err = json.Unmarshal(propertyJSON, &property)
+	if err != nil {
+		return err
+	}
+
+	bid, exists := property.Bids[id]
+	if !exists {
+		return fmt.Errorf("bid %s does not exist", id)
+	}
+
+	bid.Status = newStatus
 	property.Bids[id] = bid
 
 	propertyJSON, err = json.Marshal(property)
@@ -341,7 +376,7 @@ func (s *SmartContract) RejectBid(ctx contractapi.TransactionContextInterface, p
 
 }
 
-func (s *SmartContract) CounterBid(ctx contractapi.TransactionContextInterface, propertyId string, id string, amount int) error {
+func (s *SmartContract) CounterBid(ctx contractapi.TransactionContextInterface, propertyId string, id string, amount float32) error {
 
 	// Logic is a bit redundant, maybe put into another func
 	propertyJSON, err := ctx.GetStub().GetState(propertyId)
